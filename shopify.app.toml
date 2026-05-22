@@ -1,0 +1,31 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "3a9151e52e53cb40938d8f56f2c8d6ea"
+application_url = "https://example.com"
+embedded = true
+name = "bibs-b2b-cart-sync"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customers,write_customers,read_companies,write_companies"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[app_proxy]
+url = "/apps/company-cart"
+subpath = "company-cart"
+prefix = "apps"
+
+[webhooks]
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+[auth]
+redirect_urls = [ ]
