@@ -1,29 +1,57 @@
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import {
+  getCompanyCartForCustomer,
   getCompanyIdForCustomer,
   parseCompanyCartBody,
   setCompanyCartMetafield,
 } from "../lib/company-cart.server";
 
+function customerGidFromProxy(url: URL): string | null {
+  const loggedInCustomerId = url.searchParams.get("logged_in_customer_id");
+  if (!loggedInCustomerId) return null;
+  return `gid://shopify/Customer/${loggedInCustomerId}`;
+}
+
 /**
- * App Proxy: POST https://{shop}/apps/company-cart/sync
- * Theme sends { lines: [{ variant_id, quantity }] }.
- * Shopify adds logged_in_customer_id when the buyer is logged in.
+ * GET  /apps/company-cart/sync — read company cart metafield (for theme prefill)
+ * POST /apps/company-cart/sync — write company cart metafield (after user cart change)
  */
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { admin } = await authenticate.public.appProxy(request);
+  const url = new URL(request.url);
+  const customerGid = customerGidFromProxy(url);
+
+  if (!customerGid) {
+    return json(
+      { error: "Not logged in or missing logged_in_customer_id" },
+      { status: 401 },
+    );
+  }
+
+  const { companyId, cart } = await getCompanyCartForCustomer(admin, customerGid);
+
+  if (!companyId) {
+    return json(
+      { error: "Customer is not associated with a B2B company" },
+      { status: 404 },
+    );
+  }
+
+  return json({ ok: true, lines: cart.lines });
+};
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
   }
 
   const { admin } = await authenticate.public.appProxy(request);
-
   const url = new URL(request.url);
+  const customerGid = customerGidFromProxy(url);
 
-  const loggedInCustomerId = url.searchParams.get("logged_in_customer_id");
-
-  if (!loggedInCustomerId) {
+  if (!customerGid) {
     return json(
       { error: "Not logged in or missing logged_in_customer_id" },
       { status: 401 },
@@ -45,7 +73,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     );
   }
 
-  const customerGid = `gid://shopify/Customer/${loggedInCustomerId}`;
   const companyId = await getCompanyIdForCustomer(admin, customerGid);
 
   if (!companyId) {
@@ -62,10 +89,4 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   return json({ ok: true, lineCount: payload.lines.length });
-};
-
-/** App Proxy may probe with GET */
-export const loader = async ({ request }: ActionFunctionArgs) => {
-  await authenticate.public.appProxy(request);
-  return json({ ok: true, endpoint: "company-cart-sync" });
 };

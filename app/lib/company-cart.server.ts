@@ -123,3 +123,41 @@ export async function setCompanyCartMetafield(
 
   return { ok: true, errors: [] };
 }
+
+export async function getCompanyCartMetafield(
+  admin: { graphql: (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response> },
+  companyId: string,
+): Promise<CompanyCartPayload> {
+  const response = await admin.graphql(
+    `#graphql
+      query CompanyCartMetafield($id: ID!) {
+        company(id: $id) {
+          metafield(namespace: "custom", key: "company_cart") {
+            value
+          }
+        }
+      }
+    `,
+    { variables: { id: companyId } },
+  );
+
+  const json = await response.json();
+  const raw = json?.data?.company?.metafield?.value as string | undefined;
+  if (!raw) return { lines: [] };
+
+  try {
+    return parseCompanyCartBody(JSON.parse(raw)) ?? { lines: [] };
+  } catch {
+    return { lines: [] };
+  }
+}
+
+export async function getCompanyCartForCustomer(
+  admin: { graphql: (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response> },
+  customerGid: string,
+): Promise<{ companyId: string | null; cart: CompanyCartPayload }> {
+  const companyId = await getCompanyIdForCustomer(admin, customerGid);
+  if (!companyId) return { companyId: null, cart: { lines: [] } };
+  const cart = await getCompanyCartMetafield(admin, companyId);
+  return { companyId, cart };
+}
