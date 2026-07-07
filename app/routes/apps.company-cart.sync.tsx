@@ -14,6 +14,19 @@ function customerGidFromProxy(url: URL): string | null {
   return `gid://shopify/Customer/${loggedInCustomerId}`;
 }
 
+function cartResponse(cart: {
+  lines: Array<{ variant_id: number; quantity: number }>;
+  compareDigest: string | null;
+  updatedAt: string | null;
+}) {
+  return {
+    ok: true as const,
+    lines: cart.lines,
+    compareDigest: cart.compareDigest,
+    updatedAt: cart.updatedAt,
+  };
+}
+
 /**
  * GET  /apps/company-cart/sync — read company cart metafield (for theme prefill)
  * POST /apps/company-cart/sync — write company cart metafield (after user cart change)
@@ -39,7 +52,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     );
   }
 
-  return json({ ok: true, lines: cart.lines });
+  return json(cartResponse(cart));
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -82,11 +95,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     );
   }
 
-  const result = await setCompanyCartMetafield(admin, companyId, payload);
+  const { compareDigest, ...cartPayload } = payload;
+  const result = await setCompanyCartMetafield(
+    admin,
+    companyId,
+    cartPayload,
+    compareDigest,
+  );
 
   if (!result.ok) {
+    if (result.conflict && result.snapshot) {
+      return json(
+        {
+          error: "Cart was updated by another user",
+          conflict: true,
+          ...cartResponse(result.snapshot),
+        },
+        { status: 409 },
+      );
+    }
+
     return json({ error: "Failed to save company cart", details: result.errors }, { status: 422 });
   }
 
-  return json({ ok: true, lineCount: payload.lines.length });
+  return json({
+    ok: true,
+    lineCount: cartPayload.lines.length,
+    compareDigest: result.snapshot?.compareDigest ?? null,
+    updatedAt: result.snapshot?.updatedAt ?? null,
+  });
 };
